@@ -12,6 +12,8 @@ export {
   MaxTotalSizeExceededError,
   MultipartParser,
   MultipartPart,
+  StreamedMultipartPart,
+  BufferedMultipartPart
 } from './lib/multipart.ts'
 
 export { getMultipartBoundary } from './lib/multipart-request.ts'
@@ -20,6 +22,7 @@ export { getMultipartBoundary } from './lib/multipart-request.ts'
 export {
   isMultipartRequest,
   parseMultipartRequest,
+  parseMultipartRequestAsStreams,
   parseMultipart,
   parseMultipartStream,
 } from './lib/multipart.node.ts'

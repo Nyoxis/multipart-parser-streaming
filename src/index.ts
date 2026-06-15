@@ -13,10 +13,13 @@ export {
   parseMultipartStream,
   MultipartParser,
   MultipartPart,
+  StreamedMultipartPart,
+  BufferedMultipartPart
 } from './lib/multipart.ts'
 
 export {
   getMultipartBoundary,
   isMultipartRequest,
   parseMultipartRequest,
+  parseMultipartRequestAsStreams
 } from './lib/multipart-request.ts'

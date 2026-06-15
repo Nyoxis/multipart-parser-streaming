@@ -3,7 +3,7 @@ import { describe, it } from '@remix-run/test'
 
 import { createMultipartMessage, getRandomBytes } from '../../test/utils.ts'
 
-import type { MultipartParserOptions, MultipartPart } from './multipart.ts'
+import type { BufferedMultipartPart, MultipartParserOptions } from './multipart.ts'
 import {
   MultipartParseError,
   MaxHeaderSizeExceededError,
@@ -15,6 +15,7 @@ import {
   getMultipartBoundary,
   isMultipartRequest,
   parseMultipartRequest,
+  parseMultipartRequestAsStreams,
 } from './multipart-request.ts'
 
 const CRLF = '\r\n'
@@ -69,7 +70,7 @@ describe('isMultipartRequest', async () => {
   })
 })
 
-describe('parseMultipartRequest', async () => {
+describe('parseMultipartRequestStreaming', async () => {
   let boundary = '----WebKitFormBoundaryz8Zv2UxQ7f4a0Z3H'
   let boundaryBytes = new TextEncoder().encode(`\r\n--${boundary}`)
 
@@ -116,7 +117,7 @@ describe('parseMultipartRequest', async () => {
     })
 
     let parts = []
-    for await (let part of parseMultipartRequest(request)) {
+    for await (let part of parseMultipartRequestAsStreams(request)) {
       parts.push(part)
     }
 
@@ -134,10 +135,11 @@ describe('parseMultipartRequest', async () => {
       }),
     })
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 1)
     assert.equal(parts[0].name, 'field1')
@@ -156,10 +158,11 @@ describe('parseMultipartRequest', async () => {
       }),
     })
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 2)
     assert.equal(parts[0].name, 'field1')
@@ -179,10 +182,11 @@ describe('parseMultipartRequest', async () => {
       }),
     })
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 1)
     assert.equal(parts[0].name, 'empty')
@@ -204,10 +208,11 @@ describe('parseMultipartRequest', async () => {
       }),
     })
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 1)
     assert.equal(parts[0].name, 'file1')
@@ -234,10 +239,11 @@ describe('parseMultipartRequest', async () => {
       ].join(CRLF),
     })
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 1)
     assert.equal(
@@ -265,10 +271,11 @@ describe('parseMultipartRequest', async () => {
       }),
     })
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 1)
     assert.equal(parts[0].name, '名前')
@@ -291,10 +298,11 @@ describe('parseMultipartRequest', async () => {
       }),
     })
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = [];
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 1)
     assert.equal(parts[0].filename, '%2Fetc%2Fpasswd')
@@ -317,10 +325,11 @@ describe('parseMultipartRequest', async () => {
       }),
     })
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 3)
     assert.equal(parts[0].name, 'field1')
@@ -350,13 +359,13 @@ describe('parseMultipartRequest', async () => {
       }),
     })
 
-    let parts: { name?: string; filename?: string; mediaType?: string; content: Uint8Array }[] = []
-    for await (let part of parseMultipartRequest(request, { maxFileSize })) {
+    let parts: { name?: string; filename?: string; mediaType?: string; content: Promise<Uint8Array> }[] = []
+    for await (let part of parseMultipartRequestAsStreams(request, { maxFileSize })) {
       parts.push({
         name: part.name,
         filename: part.filename,
         mediaType: part.mediaType,
-        content: part.bytes,
+        content: part.toBuffered().then((b) => b.bytes),
       })
     }
 
@@ -364,7 +373,7 @@ describe('parseMultipartRequest', async () => {
     assert.equal(parts[0].name, 'file1')
     assert.equal(parts[0].filename, 'random.dat')
     assert.equal(parts[0].mediaType, 'application/octet-stream')
-    assert.deepEqual(parts[0].content, content)
+    assert.deepEqual(await parts[0].content, content)
   })
 
   it('parses when boundary is split across chunks', async () => {
@@ -377,10 +386,11 @@ describe('parseMultipartRequest', async () => {
 
     let request = createChunkedRequest(body, boundaryIndex + 3)
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts);
 
     assert.equal(parts.length, 2)
     assert.equal(parts[0].name, 'field1')
@@ -400,10 +410,11 @@ describe('parseMultipartRequest', async () => {
     // End first chunk with only '\r' from the '\r\n--boundary' marker.
     let request = createChunkedRequest(body, boundaryIndex + 1)
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 2)
     assert.equal(parts[0].name, 'field1')
@@ -423,10 +434,11 @@ describe('parseMultipartRequest', async () => {
     // End first chunk right before '\r\n--boundary'.
     let request = createChunkedRequest(body, boundaryIndex)
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 2)
     assert.equal(parts[0].name, 'field1')
@@ -444,11 +456,11 @@ describe('parseMultipartRequest', async () => {
     })
 
     await assert.rejects(async () => {
-      for await (let _ of parseMultipartRequest(request)) {
+      for await (let _ of parseMultipartRequestAsStreams(request)) {
         // ...
       }
     }, MultipartParseError)
-  })
+  });
 
   it('throws when initial boundary is missing', async () => {
     let request = new Request('https://example.com', {
@@ -460,11 +472,11 @@ describe('parseMultipartRequest', async () => {
     })
 
     await assert.rejects(async () => {
-      for await (let _ of parseMultipartRequest(request)) {
+      for await (let _ of parseMultipartRequestAsStreams(request)) {
         // ...
       }
     }, MultipartParseError)
-  })
+  });
 
   it('throws when header exceeds maximum size', async () => {
     let request = new Request('https://example.com', {
@@ -483,7 +495,7 @@ describe('parseMultipartRequest', async () => {
     })
 
     await assert.rejects(async () => {
-      for await (let _ of parseMultipartRequest(request, { maxHeaderSize: 4 * 1024 })) {
+      for await (let _ of parseMultipartRequestAsStreams(request, { maxHeaderSize: 4 * 1024 })) {
         // ...
       }
     }, MaxHeaderSizeExceededError)
@@ -506,7 +518,7 @@ describe('parseMultipartRequest', async () => {
     })
 
     await assert.rejects(async () => {
-      for await (let _ of parseMultipartRequest(request, { maxFileSize })) {
+      for await (let _ of parseMultipartRequestAsStreams(request, { maxFileSize })) {
         // ...
       }
     }, MaxFileSizeExceededError)
@@ -528,7 +540,7 @@ describe('parseMultipartRequest', async () => {
     let options: MultipartParserOptions = { maxParts: 2 }
 
     await assert.rejects(async () => {
-      for await (let _ of parseMultipartRequest(request, options)) {
+      for await (let _ of parseMultipartRequestAsStreams(request, options)) {
         // ...
       }
     }, MaxPartsExceededError)
@@ -549,7 +561,7 @@ describe('parseMultipartRequest', async () => {
     let options: MultipartParserOptions = { maxTotalSize: 9 }
 
     await assert.rejects(async () => {
-      for await (let _ of parseMultipartRequest(request, options)) {
+      for await (let _ of parseMultipartRequestAsStreams(request, options)) {
         // ...
       }
     }, MaxTotalSizeExceededError)
@@ -561,13 +573,14 @@ describe('parseMultipartRequest', async () => {
       headers: {
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
       },
-      body: [`--${boundary}`, 'Invalid-Header', '', 'Some content', `--${boundary}--`].join(CRLF),
+      body: [ `--${boundary}`, 'Invalid-Header', '', 'Some content', `--${boundary}--` ].join(CRLF),
     })
 
-    let parts: MultipartPart[] = []
-    for await (let part of parseMultipartRequest(request)) {
-      parts.push(part)
+    let buffering_parts: Promise<BufferedMultipartPart>[] = []
+    for await ( let part of parseMultipartRequestAsStreams(request) ) {
+      buffering_parts.push(part.toBuffered())
     }
+    let parts = await Promise.all(buffering_parts)
 
     assert.equal(parts.length, 1)
     assert.equal(parts[0].headers['invalid-header'], undefined)
@@ -590,7 +603,7 @@ describe('parseMultipartRequest', async () => {
     })
 
     await assert.rejects(async () => {
-      for await (let _ of parseMultipartRequest(request)) {
+      for await (let _ of parseMultipartRequestAsStreams(request)) {
         // ...
       }
     }, MultipartParseError)
@@ -606,9 +619,34 @@ describe('parseMultipartRequest', async () => {
     })
 
     await assert.rejects(async () => {
-      for await (let _ of parseMultipartRequest(request)) {
+      for await (let _ of parseMultipartRequestAsStreams(request)) {
         // ...
       }
     }, MultipartParseError)
+  })
+})
+
+describe('parseMultipartRequest (buffered)', async () => {
+  let boundary = '----WebKitFormBoundaryz8Zv2UxQ7f4a0Z3H'
+
+  it('parses a simple multipart request into buffered parts', async () => {
+    let request = new Request('https://example.com', {
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      body: createMultipartMessage(boundary, {
+        field1: 'value1',
+      }),
+    })
+
+    let parts = []
+    for await (let part of parseMultipartRequest(request)) {
+      parts.push(part)
+    }
+
+    assert.equal(parts.length, 1)
+    assert.equal(parts[0].name, 'field1')
+    assert.equal(parts[0].text, 'value1')
   })
 })

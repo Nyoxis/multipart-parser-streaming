@@ -1,0 +1,12 @@
+{
+  "name": "@nyoxis/multipart-parser-streaming",
+  "version": "0.17.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts"
+  },
+  "imports": {
+    "@remix-run/headers/content-disposition": "npm:@remix-run/headers@^0.21.1/content-disposition",
+    "@remix-run/headers/content-type": "npm:@remix-run/headers@^0.21.1/content-type"
+  }
+}

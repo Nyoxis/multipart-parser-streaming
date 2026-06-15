@@ -1,15 +1,20 @@
 {
-  "name": "@remix-run/multipart-parser",
-  "version": "0.16.3",
-  "description": "A fast, efficient parser for multipart streams in any JavaScript environment",
-  "author": "Michael Jackson <mjijackson@gmail.com>",
+  "name": "@nyoxis/multipart-parser-streaming",
+  "version": "0.17.0",
+  "description": "A fast, efficient parser for multipart streams in any JavaScript environment yielding parts as standard streams",
+  "author": "Nyoxis <omicronnyoxis@gmail.com>",
+  "contributors": [
+    "Michael Jackson <mjijackson@gmail.com>"
+  ],
+  "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/remix-run/remix.git",
-    "directory": "packages/multipart-parser"
+    "url": "git+https://github.com/Nyoxis/multipart-parser-streaming.git"
   },
-  "homepage": "https://github.com/remix-run/remix/tree/main/packages/multipart-parser#readme",
-  "license": "MIT",
+  "homepage": "https://github.com/Nyoxis/multipart-parser-streaming#readme",
+  "bugs": {
+    "url": "https://github.com/Nyoxis/multipart-parser-streaming/issues"
+  },
   "files": [
     "LICENSE",
     "README.md",
@@ -37,13 +42,14 @@
     }
   },
   "dependencies": {
-    "@remix-run/headers": "workspace:^"
+    "@remix-run/headers": "^0.21.1"
   },
   "devDependencies": {
-    "@remix-run/assert": "workspace:*",
-    "@remix-run/test": "workspace:*",
-    "@types/node": "catalog:",
-    "@typescript/native-preview": "catalog:"
+    "@remix-run/assert": "^0.2.1",
+    "@remix-run/test": "^0.4.2",
+    "@types/node": "^24.6.0",
+    "@typescript/native-preview": "7.0.0-dev.20251125.1",
+    "playwright": "^1.60.0"
   },
   "scripts": {
     "bench": "pnpm run bench:node && pnpm run bench:bun && pnpm run bench:deno",

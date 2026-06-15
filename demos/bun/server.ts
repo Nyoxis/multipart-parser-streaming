@@ -1,4 +1,4 @@
-import { MultipartParseError, parseMultipartRequest } from '@remix-run/multipart-parser'
+import { MultipartParseError, parseMultipartRequest } from '@nyoxis/multipart-parser-streaming'
 import tmp from 'tmp'
 
 const server = Bun.serve({
@@ -10,10 +10,10 @@ const server = Bun.serve({
 <!DOCTYPE html>
 <html>
   <head>
-    <title>multipart-parser Bun Example</title>
+    <title>multipart-parser-streaming Bun Example</title>
   </head>
   <body>
-    <h1>multipart-parser Bun Example</h1>
+    <h1>multipart-parser-streaming Bun Example</h1>
     <form method="post" enctype="multipart/form-data">
       <p><input name="text1" type="text" /></p>
       <p><input name="file1" type="file" /></p>
@@ -32,6 +32,7 @@ const server = Bun.serve({
       try {
         let parts: any[] = []
 
+        // Bun currently (tested on 1.3.14) does not work properly with custom ReadableStreams, causing Bun.write to hang.
         for await (let part of parseMultipartRequest(request)) {
           if (part.isFile) {
             let tmpfile = tmp.fileSync()

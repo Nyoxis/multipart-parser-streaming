@@ -1,13 +1,13 @@
-import { parseMultipart } from '@remix-run/multipart-parser'
+import { parseMultipart } from '@nyoxis/multipart-parser-streaming'
 
 import { MultipartMessage } from '../messages.ts'
 
 const BenchmarkMaxFileSize = 100 * 1024 * 1024 // 100 MiB
 
-export function parse(message: MultipartMessage): number {
+export async function parse(message: MultipartMessage): Promise<number> {
   let start = performance.now()
 
-  for (let _ of parseMultipart(message.generateChunks(), {
+  for await (let _ of parseMultipart(message.generateChunks(), {
     boundary: message.boundary,
     maxFileSize: BenchmarkMaxFileSize,
   })) {

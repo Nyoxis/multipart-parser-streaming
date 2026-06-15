@@ -1,6 +1,17 @@
-# `multipart-parser` CHANGELOG
+# `@nyoxis/multipart-parser-streaming` CHANGELOG
 
-This is the changelog for [`multipart-parser`](https://github.com/remix-run/remix/tree/main/packages/multipart-parser). It follows [semantic versioning](https://semver.org/).
+This is the changelog for [`@nyoxis/multipart-parser-streaming`](https://github.com/Nyoxis/multipart-parser-streaming). It follows [semantic versioning](https://semver.org/).
+
+## v0.17.0
+
+This release marks the initial fork from [`@remix-run/multipart-parser`](https://github.com/remix-run/remix/tree/main/packages/multipart-parser) as [`@nyoxis/multipart-parser-streaming`](https://github.com/Nyoxis/multipart-parser-streaming), migrated to JSR.
+
+### Major Changes
+
+- **Streaming-first Architecture**: Refactored part content from fully buffered arrays to standard `ReadableStream<Uint8Array>` (web) and `Readable` (Node.js) streams, enabling true end-to-end streaming.
+- **Custom Buffering**: Added the `queuingStrategy` option to control internal Web Stream buffering.
+- **Content Stream Error Propagation**: Added content stream erroring on parsing error or incoming stream abortion.
+- **Demo & Benchmark Updates**: Updated demos (Deno, Cloudflare Workers, Node, Bun) and benchmarks to utilize streaming content.
 
 ## v0.16.3
 

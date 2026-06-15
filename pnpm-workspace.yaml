@@ -1,0 +1,11 @@
+allowBuilds:
+  esbuild: true
+  sharp: false
+  workerd: true
+catalog:
+  '@types/node': ^24.6.0
+  '@typescript/native-preview': 7.0.0-dev.20251125.1
+packages:
+  - '.'
+  - 'bench'
+  - 'demos/*'

@@ -2,7 +2,7 @@
   "name": "multipart-parser-deno-example",
   "private": true,
   "dependencies": {
-    "@remix-run/multipart-parser": "workspace:^",
+    "@nyoxis/multipart-parser-streaming": "workspace:^",
     "tmp": "^0.2.5"
   },
   "devDependencies": {

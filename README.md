@@ -1,47 +1,109 @@
-# multipart-parser
+# @nyoxis/multipart-parser-streaming
 
-Fast streaming multipart parsing for JavaScript. `multipart-parser` processes multipart bodies incrementally so large uploads can be handled without buffering the entire multipart payload in memory.
+A fork of `[@remix-run/multipart-parser](https://github.com/remix-run/remix/tree/main/packages/multipart-parser)` that enables true end-to-end streaming of parsed multipart body parts as Web `ReadableStream` and Node.js `Readable` streams.
+
+`@nyoxis/multipart-parser-streaming` processes and yields multipart parts incrementally so large uploads can be piped and consumed on-the-fly without buffering them in memory.
 
 ## Features
 
 - **File Upload Parsing** - Parse file uploads (`multipart/form-data`) with automatic field and file detection
+- **True Streaming Content** - Access part content as standard `ReadableStream` (web) or `Readable` (Node.js) streams, enabling direct piping and processing without memory buffering
 - **Full Multipart Support** - Support for all `multipart/*` content types (mixed, alternative, related, etc.)
-- **Convenient API** - `MultipartPart` API with `arrayBuffer`, `bytes`, `text`, `size`, and metadata access
+- **Convenient API** - Access metadata directly, stream content via `.content`, or buffer into a `BufferedMultipartPart` with `arrayBuffer`, `bytes`, `text`, and `size` properties
 - **Built-in Limits** - Header, per-part, part-count, and aggregate-size limits to prevent abuse
-- **Node.js Support** - First-class Node.js support with native `http.IncomingMessage` compatibility
-- **Runtime Demos** - [Demos for every major runtime](https://github.com/remix-run/remix/tree/main/packages/multipart-parser/demos)
+- **Node.js Support** - First-class Node.js support with native `http.IncomingMessage` and `stream.Readable` compatibility
+- **Runtime Demos** - [Demos for every major runtime](https://github.com/Nyoxis/multipart-parser-streaming/tree/main/demos)
+
+## Why this fork?
+
+This fork was created to enable true, end-to-end streaming of multipart body parts (yielding standard Web `ReadableStream` and Node.js `Readable` streams). 
+
+The upstream `[@remix-run/multipart-parser](https://github.com/remix-run/remix/tree/main/packages/multipart-parser)` package buffers part contents in memory (`Uint8Array[]`) to keep the API simpler and avoid stream deadlock issues. If you need to handle large uploads by piping or processing them on-the-fly, this fork provides the streaming-first architecture required for those use cases.
+
+Trying to support both fully-buffered and streaming-first APIs in a single package creates mismatched paradigms—the buffered version processes files sequentially after accumulation, while the streaming version yields control back-and-forth mid-stream. Keeping them separate avoids code duplication, package bloat, and API complexity.
+
+You can read the original design discussion and trade-offs in [remix-run/remix#10781](https://github.com/remix-run/remix/discussions/10781).
 
 ## Installation
 
 ```sh
-npm i remix
+# Deno
+deno add jsr:@nyoxis/multipart-parser-streaming
+
+# Node.js (npm)
+npx jsr add @nyoxis/multipart-parser-streaming
+
+# Node.js (pnpm)
+pnpm dlx jsr add @nyoxis/multipart-parser-streaming
+
+# Node.js (yarn)
+yarn dlx jsr add @nyoxis/multipart-parser-streaming
+
+# Bun
+bunx jsr add @nyoxis/multipart-parser-streaming
 ```
 
 ## Usage
 
-The most common use case for `multipart-parser` is handling file uploads when you're building a web server. For this case, the `parseMultipartRequest` function is your friend. It automatically validates the request is `multipart/form-data`, extracts the multipart boundary from the `Content-Type` header, parses all fields and files in the `request.body` stream, and gives each one to you as a `MultipartPart` object with a rich API for accessing its metadata and content.
+### 1. Buffered Parser (Default)
+The most common use case is when you want to parse form submissions where parts are relatively small and can be safely held in memory. For this, the default `parseMultipartRequest` function is recommended. It yields `BufferedMultipartPart` objects sequentially. Because parts are buffered internally, you can access properties like `part.bytes`, `part.text`, or `part.size` directly without deadlocks or having to manage promise pipelines:
 
 ```ts
-import { MultipartParseError, parseMultipartRequest } from 'remix/multipart-parser'
+import { MultipartParseError, parseMultipartRequest } from '@nyoxis/multipart-parser-streaming'
 
-async function handleRequest(request: Request): void {
+async function handleRequest(request: Request): Promise<void> {
   try {
     for await (let part of parseMultipartRequest(request)) {
       if (part.isFile) {
-        // Access file data in multiple formats
-        let buffer = part.arrayBuffer // ArrayBuffer
-        console.log(`File received: ${part.filename} (${buffer.byteLength} bytes)`)
+        console.log(`File received: ${part.filename}`)
         console.log(`Content type: ${part.mediaType}`)
         console.log(`Field name: ${part.name}`)
         console.log(`Content-Type header: ${part.headers['content-type']}`)
 
-        // Save to disk, upload to cloud storage, etc.
+        // Save buffered bytes directly
         await saveFile(part.filename, part.bytes)
       } else {
-        let text = part.text // string
-        console.log(`Field received: ${part.name} = ${JSON.stringify(text)}`)
+        // Access buffered text directly
+        console.log(`Field received: ${part.name} = ${JSON.stringify(part.text)}`)
       }
     }
+  } catch (error) {
+    if (error instanceof MultipartParseError) {
+      console.error('Failed to parse multipart request:', error.message)
+    } else {
+      console.error('An unexpected error occurred:', error)
+    }
+  }
+}
+```
+
+### 2. Streaming Parser
+If you are uploading large files and want to stream their content directly to cloud storage or disk without holding the entire file in memory, use `parseMultipartRequestAsStreams`.
+
+Because it returns parts as streams, you must process them without blocking the generator loop, using the pipelined `.then()` callback pattern below to prevent deadlocks:
+
+```ts
+import { MultipartParseError, parseMultipartRequestAsStreams } from '@nyoxis/multipart-parser-streaming'
+
+async function handleRequest(request: Request): Promise<void> {
+  try {
+    let previousPartPromise = Promise.resolve<BufferedMultipartPart | null | void>(null)
+
+    for await (let part of parseMultipartRequestAsStreams(request)) {
+      await previousPartPromise
+
+      if (part.isFile) {
+        // Stream the file content directly to cloud storage, disk, or another API
+        previousPartPromise = saveFileAsync(part.filename, part.content)
+      } else {
+        // Buffer simple text fields and process their results in a .then callback
+        // !IMPORTANT: Don't await the promise for the current part, otherwise a deadlock will occur.
+        previousPartPromise = part.toBuffered().then((buffered) => {
+          console.log(`Field received: ${buffered.name} = ${JSON.stringify(buffered.text)}`)
+        })
+      }
+    }
+    await previousPartPromise
   } catch (error) {
     if (error instanceof MultipartParseError) {
       console.error('Failed to parse multipart request:', error.message)
@@ -67,7 +129,7 @@ for await (let part of parseMultipartRequest(request)) {
 
 ## Size Limits
 
-A common use case when handling file uploads is limiting the overall shape of incoming multipart bodies so malicious clients cannot force unbounded growth in memory. Use `maxFileSize` to limit each part, `maxParts` to limit how many parts are accepted, and `maxTotalSize` to limit aggregate part content across the entire request. `multipart-parser` applies finite defaults for each of these limits.
+A common use case when handling file uploads is limiting the overall shape of incoming multipart bodies so malicious clients cannot force unbounded growth in memory. Use `maxFileSize` to limit each part, `maxParts` to limit how many parts are accepted, and `maxTotalSize` to limit aggregate part content across the entire request. `@nyoxis/multipart-parser-streaming` applies finite defaults for each of these limits.
 
 ```ts
 import {
@@ -76,7 +138,7 @@ import {
   MaxPartsExceededError,
   MaxTotalSizeExceededError,
   parseMultipartRequest,
-} from 'remix/multipart-parser/node'
+} from '@nyoxis/multipart-parser-streaming/node'
 
 const oneMb = Math.pow(2, 20)
 const limits = {
@@ -109,13 +171,13 @@ async function handleRequest(request: Request): Promise<Response> {
 
 ## Node.js Bindings
 
-The main module (`import {} from 'remix/multipart-parser'`) assumes you're working with [the fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) (`Request`, `ReadableStream`, etc). Support for these interfaces was added to Node.js by the [undici](https://github.com/nodejs/undici) project in [version 16.5.0](https://nodejs.org/en/blog/release/v16.5.0).
+The main module (`import {} from '@nyoxis/multipart-parser-streaming'`) assumes you're working with [the fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) (`Request`, `ReadableStream`, etc). Support for these interfaces was added to Node.js by the [undici](https://github.com/nodejs/undici) project in [version 16.5.0](https://nodejs.org/en/blog/release/v16.5.0).
 
-If however you're building a server for Node.js that relies on node-specific APIs like `http.IncomingMessage`, `stream.Readable`, and `buffer.Buffer` (ala Express or `http.createServer`), `multipart-parser` ships with an additional module that works directly with these APIs.
+If however you're building a server for Node.js that relies on node-specific APIs like `http.IncomingMessage`, `stream.Readable`, and `buffer.Buffer` (ala Express or `http.createServer`), `@nyoxis/multipart-parser-streaming` ships with an additional module that works directly with these APIs.
 
 ```ts
 import * as http from 'node:http'
-import { MultipartParseError, parseMultipartRequest } from 'remix/multipart-parser/node'
+import { MultipartParseError, parseMultipartRequest } from '@nyoxis/multipart-parser-streaming/node'
 
 let server = http.createServer(async (req, res) => {
   try {
@@ -136,10 +198,10 @@ server.listen(8080)
 
 ## Low-level API
 
-If you're working directly with multipart boundaries and buffers/streams of multipart data that are not necessarily part of a request, `multipart-parser` provides a low-level `parseMultipart()` API that you can use directly:
+If you're working directly with multipart boundaries and buffers/streams of multipart data that are not necessarily part of a request, `@nyoxis/multipart-parser-streaming` provides a low-level `parseMultipart()` API that you can use directly:
 
 ```ts
-import { parseMultipart } from 'remix/multipart-parser'
+import { parseMultipart } from '@nyoxis/multipart-parser-streaming'
 
 let message = new Uint8Array(/* ... */)
 let boundary = '----WebKitFormBoundary56eac3x'
@@ -152,7 +214,7 @@ for (let part of parseMultipart(message, { boundary })) {
 In addition, the `parseMultipartStream` function provides an `async` generator interface for multipart data in a `ReadableStream`:
 
 ```ts
-import { parseMultipartStream } from 'remix/multipart-parser'
+import { parseMultipartStream } from '@nyoxis/multipart-parser-streaming'
 
 let message = new ReadableStream(/* ... */)
 let boundary = '----WebKitFormBoundary56eac3x'
@@ -164,78 +226,19 @@ for await (let part of parseMultipartStream(message, { boundary })) {
 
 ## Demos
 
-The [`demos` directory](https://github.com/remix-run/remix/tree/main/packages/multipart-parser/demos) contains a few working demos of how you can use this library:
+The [`demos` directory](https://github.com/Nyoxis/multipart-parser-streaming/tree/main/demos) contains a few working demos of how you can use this library:
 
-- [`demos/bun`](https://github.com/remix-run/remix/tree/main/packages/multipart-parser/demos/bun) - using multipart-parser in Bun
-- [`demos/cf-workers`](https://github.com/remix-run/remix/tree/main/packages/multipart-parser/demos/cf-workers) - using multipart-parser in a Cloudflare Worker and storing file uploads in R2
-- [`demos/deno`](https://github.com/remix-run/remix/tree/main/packages/multipart-parser/demos/deno) - using multipart-parser in Deno
-- [`demos/node`](https://github.com/remix-run/remix/tree/main/packages/multipart-parser/demos/node) - using multipart-parser in Node.js
-
-## Benchmark
-
-`multipart-parser` is designed to be as efficient as possible, operating on streams of data and rarely buffering in common usage. This design yields exceptional performance when handling multipart payloads of any size. In benchmarks, `multipart-parser` is as fast or faster than `busboy`.
-
-The results of running the benchmarks on my laptop:
-
-```
-> @remix-run/multipart-parser@0.10.1 bench:node /Users/michael/Projects/remix-the-web/packages/multipart-parser
-> node ./bench/runner.ts
-
-Platform: Darwin (24.5.0)
-CPU: Apple M1 Pro
-Date: 6/13/2025, 12:27:09 PM
-Node.js v24.0.2
-┌──────────────────┬──────────────────┬──────────────────┬──────────────────┬───────────────────┐
-│ (index)          │ 1 small file     │ 1 large file     │ 100 small files  │ 5 large files     │
-├──────────────────┼──────────────────┼──────────────────┼──────────────────┼───────────────────┤
-│ multipart-parser │ '0.01 ms ± 0.03' │ '1.08 ms ± 0.08' │ '0.04 ms ± 0.01' │ '10.50 ms ± 0.38' │
-│ multipasta       │ '0.02 ms ± 0.06' │ '1.07 ms ± 0.02' │ '0.15 ms ± 0.02' │ '10.46 ms ± 0.11' │
-│ busboy           │ '0.06 ms ± 0.17' │ '3.07 ms ± 0.24' │ '0.24 ms ± 0.05' │ '29.85 ms ± 0.18' │
-│ @fastify/busboy  │ '0.05 ms ± 0.13' │ '1.23 ms ± 0.09' │ '0.45 ms ± 0.22' │ '11.81 ms ± 0.11' │
-└──────────────────┴──────────────────┴──────────────────┴──────────────────┴───────────────────┘
-
-> @remix-run/multipart-parser@0.10.1 bench:bun /Users/michael/Projects/remix-the-web/packages/multipart-parser
-> bun run ./bench/runner.ts
-
-Platform: Darwin (24.5.0)
-CPU: Apple M1 Pro
-Date: 6/13/2025, 12:27:31 PM
-Bun 1.2.13
-┌──────────────────┬────────────────┬────────────────┬─────────────────┬─────────────────┐
-│                  │ 1 small file   │ 1 large file   │ 100 small files │ 5 large files   │
-├──────────────────┼────────────────┼────────────────┼─────────────────┼─────────────────┤
-│ multipart-parser │ 0.01 ms ± 0.04 │ 0.86 ms ± 0.09 │ 0.04 ms ± 0.01  │ 8.32 ms ± 0.26  │
-│       multipasta │ 0.02 ms ± 0.07 │ 0.87 ms ± 0.03 │ 0.25 ms ± 0.21  │ 8.27 ms ± 0.09  │
-│           busboy │ 0.05 ms ± 0.17 │ 3.54 ms ± 0.10 │ 0.30 ms ± 0.03  │ 34.79 ms ± 0.38 │
-│  @fastify/busboy │ 0.06 ms ± 0.18 │ 4.04 ms ± 0.08 │ 0.48 ms ± 0.06  │ 39.91 ms ± 0.37 │
-└──────────────────┴────────────────┴────────────────┴─────────────────┴─────────────────┘
-
-> @remix-run/multipart-parser@0.10.1 bench:deno /Users/michael/Projects/remix-the-web/packages/multipart-parser
-> deno run --allow-sys ./bench/runner.ts
-
-Platform: Darwin (24.5.0)
-CPU: Apple M1 Pro
-Date: 6/13/2025, 12:28:12 PM
-Deno 2.3.6
-┌──────────────────┬──────────────────┬────────────────────┬──────────────────┬─────────────────────┐
-│ (idx)            │ 1 small file     │ 1 large file       │ 100 small files  │ 5 large files       │
-├──────────────────┼──────────────────┼────────────────────┼──────────────────┼─────────────────────┤
-│ multipart-parser │ "0.01 ms ± 0.03" │ "1.03 ms ± 0.04"   │ "0.05 ms ± 0.01" │ "10.05 ms ± 0.20"   │
-│ multipasta       │ "0.02 ms ± 0.07" │ "1.04 ms ± 0.03"   │ "0.16 ms ± 0.02" │ "10.10 ms ± 0.08"   │
-│ busboy           │ "0.05 ms ± 0.19" │ "3.06 ms ± 0.15"   │ "0.32 ms ± 0.05" │ "29.92 ms ± 0.24"   │
-│ @fastify/busboy  │ "0.06 ms ± 0.14" │ "14.72 ms ± 11.42" │ "0.81 ms ± 0.20" │ "127.63 ms ± 35.77" │
-└──────────────────┴──────────────────┴────────────────────┴──────────────────┴─────────────────────┘
-```
+- [`demos/bun`](https://github.com/Nyoxis/multipart-parser-streaming/tree/main/demos/bun) - using multipart-parser in Bun
+- [`demos/cf-workers`](https://github.com/Nyoxis/multipart-parser-streaming/tree/main/demos/cf-workers) - using multipart-parser in a Cloudflare Worker and storing file uploads in R2
+- [`demos/deno`](https://github.com/Nyoxis/multipart-parser-streaming/tree/main/demos/deno) - using multipart-parser in Deno
+- [`demos/node`](https://github.com/Nyoxis/multipart-parser-streaming/tree/main/demos/node) - using multipart-parser in Node.js
 
 ## Related Packages
 
+- [`@remix-run/multipart-parser`](https://github.com/remix-run/remix/tree/main/packages/multipart-parser) - The original upstream package from which this fork was created
 - [`form-data-parser`](https://github.com/remix-run/remix/tree/main/packages/form-data-parser) - Uses `multipart-parser` internally to parse multipart requests and generate `FileUpload`s for storage
 - [`headers`](https://github.com/remix-run/remix/tree/main/packages/headers) - Used internally to parse `Content-Disposition` and `Content-Type` metadata for each `MultipartPart`
 
-## Credits
-
-Thanks to Jacob Ebey who gave me several code reviews on this project prior to publishing.
-
 ## License
 
-See [LICENSE](https://github.com/remix-run/remix/blob/main/LICENSE)
+See [LICENSE](./LICENSE)

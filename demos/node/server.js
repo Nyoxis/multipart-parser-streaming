@@ -1,8 +1,10 @@
 import * as fs from 'node:fs'
+import * as fsPromises from 'node:fs/promises'
 import * as http from 'node:http'
+import { pipeline } from 'node:stream/promises'
 import tmp from 'tmp'
 
-import { MultipartParseError, parseMultipartRequest } from '@remix-run/multipart-parser/node'
+import { MultipartParseError, parseMultipartRequestAsStreams } from '@nyoxis/multipart-parser-streaming/node'
 
 const PORT = 44100
 
@@ -13,10 +15,10 @@ const server = http.createServer(async (req, res) => {
 <!DOCTYPE html>
 <html>
   <head>
-    <title>multipart-parser Node Example</title>
+    <title>multipart-parser-streaming Node Example</title>
   </head>
   <body>
-    <h1>multipart-parser Node Example</h1>
+    <h1>multipart-parser-streaming Node Example</h1>
     <form method="post" enctype="multipart/form-data">
       <p><input name="text1" type="text" /></p>
       <p><input name="file1" type="file" /></p>
@@ -32,23 +34,34 @@ const server = http.createServer(async (req, res) => {
     try {
       /** @type any[] */
       let parts = []
+      let previousPartPromise = Promise.resolve(null)
 
-      for await (let part of parseMultipartRequest(req)) {
+      for await (let part of parseMultipartRequestAsStreams(req)) {
+        await previousPartPromise
+
         if (part.isFile) {
           let tmpfile = tmp.fileSync()
-          fs.writeFileSync(tmpfile.name, part.bytes, 'binary')
+          let writeStream = fs.createWriteStream(tmpfile.name)
 
-          parts.push({
-            name: part.name,
-            filename: part.filename,
-            mediaType: part.mediaType,
-            size: part.size,
-            file: tmpfile.name,
-          })
+          // Stream the readable part directly to the write stream without buffering in memory
+          previousPartPromise = pipeline(part.contentReadable, writeStream)
+            .then(() => fsPromises.stat(tmpfile.name))
+            .then((stat) => {
+              parts.push({
+                name: part.name,
+                filename: part.filename,
+                mediaType: part.mediaType,
+                size: stat.size,
+                file: tmpfile.name,
+              })
+            })
         } else {
-          parts.push({ name: part.name, value: part.text })
+          previousPartPromise = part.toBuffered().then((buffered) => {
+            parts.push({ name: buffered.name, value: buffered.text })
+          })
         }
       }
+      await previousPartPromise
 
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ parts }, null, 2))

@@ -1,4 +1,4 @@
-import type { MultipartParserOptions, MultipartPart } from './multipart.ts'
+import type { BufferedMultipartPart, MultipartParserOptions, StreamedMultipartPart } from './multipart.ts'
 import { MultipartParseError, parseMultipartStream } from './multipart.ts'
 
 /**
@@ -25,19 +25,19 @@ export function isMultipartRequest(request: Request): boolean {
 
 /**
  * Parse a multipart [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request)
- * and yield each part as a {@link MultipartPart} object. Useful in HTTP server contexts
+ * and yield each part as a {@link StreamedMultipartPart} object. Useful in HTTP server contexts
  * for handling incoming `multipart/*` requests.
  *
  * @param request The `Request` object containing multipart data
  * @param options Optional parser options, such as `maxHeaderSize`, `maxFileSize`, `maxParts`,
  * and `maxTotalSize`
- * @yields Parsed {@link MultipartPart} objects from the request body
- * @returns An async generator yielding {@link MultipartPart} objects
+ * @yields Parsed {@link StreamedMultipartPart} objects from the request body
+ * @returns An async generator yielding {@link StreamedMultipartPart} objects
  */
-export async function* parseMultipartRequest(
+export async function* parseMultipartRequestAsStreams(
   request: Request,
   options?: MultipartParserOptions,
-): AsyncGenerator<MultipartPart, void, unknown> {
+): AsyncGenerator<StreamedMultipartPart, void, unknown> {
   if (!isMultipartRequest(request)) {
     throw new MultipartParseError('Request is not a multipart request')
   }
@@ -56,5 +56,31 @@ export async function* parseMultipartRequest(
     maxFileSize: options?.maxFileSize,
     maxParts: options?.maxParts,
     maxTotalSize: options?.maxTotalSize,
-  })
+    queuingStrategy: options?.queuingStrategy,
+  });
+}
+
+/**
+ * Parse a multipart [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request)
+ * and yield each part as a {@link BufferedMultipartPart} object. Useful in HTTP server contexts
+ * for handling incoming `multipart/*` requests.
+ *
+ * @param request The `Request` object containing multipart data
+ * @param options Optional parser options, such as `maxHeaderSize`, `maxFileSize`, `maxParts`,
+ * and `maxTotalSize`
+ * @yields Parsed {@link BufferedMultipartPart} objects from the request body
+ * @returns An async generator yielding {@link BufferedMultipartPart} objects
+ */
+export async function* parseMultipartRequest(
+  request: Request,
+  options?: MultipartParserOptions,
+): AsyncGenerator<BufferedMultipartPart, void, unknown> {
+  let bufferingParts: Promise<BufferedMultipartPart>[] = []
+  for await (let part of parseMultipartRequestAsStreams(request, options)) {
+    bufferingParts.push(part.toBuffered())
+  }
+  let buffered = await Promise.all(bufferingParts)
+  for (let part of buffered) {
+    yield part
+  }
 }

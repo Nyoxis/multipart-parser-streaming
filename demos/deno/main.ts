@@ -1,5 +1,5 @@
 // deno-lint-ignore-file prefer-const
-import { MultipartParseError, parseMultipartRequest } from '@remix-run/multipart-parser'
+import { BufferedMultipartPart, MultipartParseError, parseMultipartRequestAsStreams, } from '@nyoxis/multipart-parser-streaming'
 // @deno-types="npm:@types/tmp"
 import tmp from 'npm:tmp'
 
@@ -12,10 +12,10 @@ async function requestHandler(request: Request): Promise<Response> {
 <!DOCTYPE html>
 <html>
   <head>
-    <title>multipart-parser Deno Example</title>
+    <title>multipart-parser-streaming Deno Example</title>
   </head>
   <body>
-    <h1>multipart-parser Deno Example</h1>
+    <h1>multipart-parser-streaming Deno Example</h1>
     <form method="post" enctype="multipart/form-data">
       <p><input name="text1" type="text" /></p>
       <p><input name="file1" type="file" /></p>
@@ -34,23 +34,38 @@ async function requestHandler(request: Request): Promise<Response> {
     try {
       // deno-lint-ignore no-explicit-any
       let parts: any[] = []
+      let previousPartPromise = Promise.resolve<BufferedMultipartPart | null | void>(null)
 
-      for await (let part of parseMultipartRequest(request)) {
+      for await (let part of parseMultipartRequestAsStreams(request)) {
+        await previousPartPromise
+
         if (part.isFile) {
           let tmpfile = tmp.fileSync()
-          await Deno.writeFile(tmpfile.name, part.bytes)
 
-          parts.push({
-            name: part.name,
-            filename: part.filename,
-            mediaType: part.mediaType,
-            size: part.size,
-            file: tmpfile.name,
+          // Stream directly to file without buffering in memory
+          previousPartPromise = Deno.open(tmpfile.name, {
+            write: true,
+            create: true,
+            truncate: true,
           })
+            .then((file) => part.content.pipeTo(file.writable))
+            .then(() => Deno.stat(tmpfile.name))
+            .then((stat) => {
+              parts.push({
+                name: part.name,
+                filename: part.filename,
+                mediaType: part.mediaType,
+                size: stat.size,
+                file: tmpfile.name,
+              })
+            })
         } else {
-          parts.push({ name: part.name, value: part.text })
+          previousPartPromise = part.toBuffered().then((buffered) => {
+            parts.push({ name: buffered.name, value: buffered.text })
+          })
         }
       }
+      await previousPartPromise
 
       return new Response(JSON.stringify({ parts }, null, 2), {
         headers: { 'Content-Type': 'application/json' },

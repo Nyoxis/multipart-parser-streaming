@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@remix-run/multipart-parser": "workspace:^"
+    "@nyoxis/multipart-parser-streaming": "workspace:^"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",
